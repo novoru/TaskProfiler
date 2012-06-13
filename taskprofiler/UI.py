@@ -2,8 +2,8 @@
 
 '''
 Created on 2012/06/09
-
-@author: Noboru
+@author:        Noboru
+Description:    Task Profiler User Interface Module using PyQt4
 '''
 
 import sys
@@ -14,11 +14,14 @@ class StopWatchPanel(QtGui.QWidget):
     ストップウォッチの表示と操作。
     """
     
+    DEFAULT_SIZE = QtCore.QSize(270, 170)
+    DEFAULT_TEXT = ""
+    
     def __init__(self, parent = None):
         QtGui.QWidget.__init__(self, parent = parent)
         self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
-        self.setFixedSize(200,150)
-        self.label = QtGui.QLineEdit("")
+        self.setFixedSize(self.DEFAULT_SIZE)
+        self.label = QtGui.QLineEdit(self.DEFAULT_TEXT)
         self.stopWatch = self.StopWatchWidget()
         self.controllPanel = self.ControllPanel()
         
@@ -30,13 +33,14 @@ class StopWatchPanel(QtGui.QWidget):
         self.controllPanel.startButton.clicked.connect(self.stopWatch.startCountUp)
         self.controllPanel.stopButton.clicked.connect(self.stopWatch.stopCountUp)
         self.controllPanel.resetButton.clicked.connect(self.stopWatch.resetCount)
-        #self.controllPanel.quitButton.clicked.connect()
-        
+                
         self.setLayout(layout)
         
     class ControllPanel(QtGui.QWidget):
         
-        DEFAULT_SIZE = QtCore.QSize(200,50)
+        DEFAULT_SIZE = QtCore.QSize(270,100)
+        function = None
+        removeObject = None
         
         def __init__(self, parent = None):
             QtGui.QWidget.__init__(self, parent = parent)
@@ -47,12 +51,25 @@ class StopWatchPanel(QtGui.QWidget):
             self.startButton    = QtGui.QPushButton("START")
             self.stopButton     = QtGui.QPushButton("STOP")
             self.resetButton    = QtGui.QPushButton("RESET")
-                        
+            self.removeButton   = QtGui.QPushButton("REMOVE")
+            self.removeButton.clicked.connect(self.remove)
+                   
             layout = QtGui.QHBoxLayout()
             layout.addWidget(self.startButton)
             layout.addWidget(self.stopButton)
             layout.addWidget(self.resetButton)
-            self.setLayout(layout)
+            layout.addWidget(self.removeButton)
+            
+            self.setLayout(layout)      
+
+        def remove(self, event, _function = None, _removeObject = None):
+            if _function:
+                self.function = _function
+                self.removeObject = _removeObject
+            print self.function
+            if self.function:
+                self.function(self.removeObject)
+            
 
     class StopWatchWidget(QtGui.QWidget):
         
@@ -60,7 +77,7 @@ class StopWatchPanel(QtGui.QWidget):
         ONE_HOUR    = 3600      #Unit: [s]
         ONE_MINUTE  = 60        #Unit: [s]
         
-        DEFAULT_SIZE = QtCore.QSize(200,50)
+        DEFAULT_SIZE = QtCore.QSize(250,50)
         
         def __init__(self, parent = None):
             QtGui.QWidget.__init__(self, parent = parent)
@@ -84,13 +101,11 @@ class StopWatchPanel(QtGui.QWidget):
             self.setLayout(layout)
             
             self.resetCount()   
-            self.startCountUp()
+            #self.startCountUp()
             
         def updateDisplay(self):
             time = self.convert24Hours()
-            print self.count
-            self.lcdNumber.display(self.count)
-            #self.lcdNumber.display(time["hours"] + ":" + time["minutes"] + ":" + time["seconds"])
+            self.lcdNumber.display(time["hours"] + ":" + time["minutes"] + ":" + time["seconds"])
                     
         def resetCount(self):
             self.count = 0
@@ -134,7 +149,7 @@ class StopWatchPanel(QtGui.QWidget):
 class MainWindow(QtGui.QMainWindow):
     
     TITLE = "TaskProfiler"
-    DEFAULT_GEOMETRY = QtCore.QRect(50,50,270,250)
+    DEFAULT_GEOMETRY = QtCore.QRect(10,30,330,800)
     
     def __init__(self, parent = None):
         QtGui.QMainWindow.__init__(self, parent = parent, flags = QtCore.Qt.WindowStaysOnTopHint)
@@ -159,10 +174,19 @@ class MainWindow(QtGui.QMainWindow):
         
         self.stopWatchArea.addStopWatch()
         
+        #デバッグ用のキーイベント
+        self.keyPressEvent = self.debugKey
+        
+    def debugKey(self, event):
+        key = event.text()
+        
+        if key == 's':
+            print "Stop"
+            self.stopWatchArea.stopCountUpAllStopWatches()
         
     class StopWatchArea(QtGui.QScrollArea):
         
-        stopWatches = []
+        stopWatchPanels = []
         
         def __init__(self, parent = None):
             QtGui.QScrollArea.__init__(self, parent = parent)
@@ -175,16 +199,36 @@ class MainWindow(QtGui.QMainWindow):
             
             self.base.setLayout(self.layout)
             self.setWidget(self.base)
-            
+        
         def addStopWatch(self):
-            self.stopWatches.append(StopWatchPanel(self))
-            self.layout.addWidget(self.stopWatches[-1])
+            stopWatchPanel = StopWatchPanel(self)
+            stopWatchPanel.controllPanel.remove(None, self.removeStopWatch, stopWatchPanel)
+            self.stopWatchPanels.append(stopWatchPanel)
+            self.layout.addWidget(self.stopWatchPanels[-1])
+        
+        def stopCountUpAll(self):
+            [stopWatchPanel.stopWatch.stopCountUp() for stopWatchPanel in self.stopWatchPanels]
+        
+        def stopCountUpWithout(self, _stopWatch):
+            for stopWatchPanel in self.stopWatchPanels:
+                stopWatch = stopWatchPanel.stopWatch
+                if not(stopWatch == _stopWatch):
+                    stopWatch.stopCountUp()
         
         def removeBottomStopWatch(self):
-            if self.stopWatches:
-                stopWatchPanel = self.stopWatches.pop()
+            print "hoge"
+            if self.stopWatchPanels:
+                stopWatchPanel = self.stopWatchPanels.pop()
                 stopWatchPanel.stopWatch.destructor()
                 self.layout.removeWidget(stopWatchPanel)
+        
+        def removeStopWatch(self, _stopWatch):
+            if self.stopWatchPanels:
+                for i, stopWatch in enumerate(self.stopWatchPanels):
+                    if stopWatch == _stopWatch:
+                        removeStopWatch = self.stopWatchPanels.pop(i)
+                        removeStopWatch.stopWatch.destructor()
+                        self.layout.removeWidget(removeStopWatch)
             
     class ControllPanel(QtGui.QWidget):
         def __init__(self, parent = None):
@@ -195,12 +239,15 @@ class MainWindow(QtGui.QMainWindow):
             self.addButton.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
             self.layout.addWidget(self.addButton)
             
+            """
             self.removeButton = QtGui.QPushButton("Remove")
             self.removeButton.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
             self.layout.addWidget(self.removeButton)
+            """
             
             self.setLayout(self.layout)
-    
+
+
 def main():
     app = QtGui.QApplication(sys.argv)
     
