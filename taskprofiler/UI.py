@@ -39,8 +39,7 @@ class StopWatchPanel(QtGui.QWidget):
     class ControllPanel(QtGui.QWidget):
         
         DEFAULT_SIZE = QtCore.QSize(270,100)
-        function = None
-        removeObject = None
+        remove_function = None
         
         def __init__(self, parent = None):
             QtGui.QWidget.__init__(self, parent = parent)
@@ -62,13 +61,12 @@ class StopWatchPanel(QtGui.QWidget):
             
             self.setLayout(layout)      
 
-        def remove(self, event, _function = None, _removeObject = None):
+        def remove(self, event, _function = None):
             if _function:
-                self.function = _function
-                self.removeObject = _removeObject
-            print self.function
-            if self.function:
-                self.function(self.removeObject)
+                self.remove_function = _function
+            
+            if self.remove_function:
+                self.remove_function(self.parent())
             
 
     class StopWatchWidget(QtGui.QWidget):
@@ -78,6 +76,7 @@ class StopWatchPanel(QtGui.QWidget):
         ONE_MINUTE  = 60        #Unit: [s]
         
         DEFAULT_SIZE = QtCore.QSize(250,50)
+        LCD_SIZE = QtCore.QSize(200,200)
         
         def __init__(self, parent = None):
             QtGui.QWidget.__init__(self, parent = parent)
@@ -89,7 +88,9 @@ class StopWatchPanel(QtGui.QWidget):
             self.timer.timeout.connect(self.doCountUp)
             
             self.lcdNumber = QtGui.QLCDNumber(parent = self)
-            self.lcdNumber.setAutoFillBackground(False)
+            self.lcdNumber.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
+            #self.lcdNumber.setFixedSize(self.LCD_SIZE)
+            #self.lcdNumber.setAutoFillBackground(False)
             self.lcdNumber.setSizePolicy(QtGui.QSizePolicy.Expanding,
                                           QtGui.QSizePolicy.Expanding)
             self.lcdNumber.setFrameStyle(QtGui.QFrame.NoFrame)
@@ -101,7 +102,7 @@ class StopWatchPanel(QtGui.QWidget):
             self.setLayout(layout)
             
             self.resetCount()   
-            #self.startCountUp()
+            self.stopCountUp()
             
         def updateDisplay(self):
             time = self.convert24Hours()
@@ -117,9 +118,11 @@ class StopWatchPanel(QtGui.QWidget):
     
         def startCountUp(self):
             self.timer.start()
+            self.lcdNumber.setFrameStyle(QtGui.QLCDNumber.Filled)
         
         def stopCountUp(self):
             self.timer.stop()
+            self.lcdNumber.setFrameStyle(QtGui.QLCDNumber.NoFrame)
             
         def destructor(self):
             self.resetCount()
@@ -167,7 +170,7 @@ class MainWindow(QtGui.QMainWindow):
         self.mainPanelLayout.addWidget(self.controllPanel)
         
         self.controllPanel.addButton.clicked.connect(self.stopWatchArea.addStopWatch)
-        self.controllPanel.removeButton.clicked.connect(self.stopWatchArea.removeBottomStopWatch)
+        #self.controllPanel.removeButton.clicked.connect(self.stopWatchArea.removeBottomStopWatch)
         
         self.setWindowTitle(self.TITLE)
         self.setCentralWidget(self.mainPanel)
@@ -202,7 +205,7 @@ class MainWindow(QtGui.QMainWindow):
         
         def addStopWatch(self):
             stopWatchPanel = StopWatchPanel(self)
-            stopWatchPanel.controllPanel.remove(None, self.removeStopWatch, stopWatchPanel)
+            stopWatchPanel.controllPanel.remove(None, self.removeStopWatch)
             self.stopWatchPanels.append(stopWatchPanel)
             self.layout.addWidget(self.stopWatchPanels[-1])
         
