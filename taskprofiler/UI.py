@@ -6,6 +6,7 @@ Created on 2012/06/09
 Description:    Task Profiler User Interface Module using PyQt4
 '''
 
+import pickle
 import sys
 from PyQt4 import QtCore, QtGui
 
@@ -15,14 +16,13 @@ class StopWatchPanel(QtGui.QWidget):
     """
     
     DEFAULT_SIZE = QtCore.QSize(270, 170)
-    DEFAULT_TEXT = ""
     
-    def __init__(self, parent = None):
+    def __init__(self, parent = None, _labelText = "", _count = 0):
         QtGui.QWidget.__init__(self, parent = parent)
         self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
         self.setFixedSize(self.DEFAULT_SIZE)
-        self.label = QtGui.QLineEdit(self.DEFAULT_TEXT)
-        self.stopWatch = self.StopWatchWidget()
+        self.label = QtGui.QLineEdit(QtCore.QString(_labelText))
+        self.stopWatch = self.StopWatchWidget(self, _count)
         self.controllPanel = self.ControllPanel()
         
         layout = QtGui.QVBoxLayout()
@@ -35,6 +35,12 @@ class StopWatchPanel(QtGui.QWidget):
         self.controllPanel.resetButton.clicked.connect(self.stopWatch.resetCount)
                 
         self.setLayout(layout)
+    
+    def getState(self):
+        state = self.stopWatch.getState()
+        state["labelText"] = self.label.text()
+        
+        return state
         
     class ControllPanel(QtGui.QWidget):
         
@@ -75,10 +81,12 @@ class StopWatchPanel(QtGui.QWidget):
         ONE_HOUR    = 3600      #Unit: [s]
         ONE_MINUTE  = 60        #Unit: [s]
         
-        DEFAULT_SIZE = QtCore.QSize(250,50)
-        LCD_SIZE = QtCore.QSize(200,200)
+        DEFAULT_SIZE    = QtCore.QSize(250,50)
+        LCD_SIZE        = QtCore.QSize(200,200)
         
-        def __init__(self, parent = None):
+        count       = 0
+        
+        def __init__(self, parent = None, _count = 0):
             QtGui.QWidget.__init__(self, parent = parent)
             
             self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
@@ -101,15 +109,15 @@ class StopWatchPanel(QtGui.QWidget):
             layout.addWidget(self.lcdNumber)
             self.setLayout(layout)
             
-            self.resetCount()   
+            self.resetCount(_count)
             self.stopCountUp()
             
         def updateDisplay(self):
             time = self.convert24Hours()
             self.lcdNumber.display(time["hours"] + ":" + time["minutes"] + ":" + time["seconds"])
                     
-        def resetCount(self):
-            self.count = 0
+        def resetCount(self, _count = 0):
+            self.count = _count
             self.updateDisplay()
     
         def doCountUp(self):
@@ -149,16 +157,22 @@ class StopWatchPanel(QtGui.QWidget):
                 
             return {"hours":hours, "minutes":minutes, "seconds":seconds}
 
+        def getState(self):
+            return {"count":self.count}
+
 class MainWindow(QtGui.QMainWindow):
     
     TITLE = "TaskProfiler"
-    DEFAULT_GEOMETRY = QtCore.QRect(10,30,330,800)
+    DEFAULT_GEOMETRY = QtCore.QRect(10,30,330,530)
     
     def __init__(self, parent = None):
         QtGui.QMainWindow.__init__(self, parent = parent, flags = QtCore.Qt.WindowStaysOnTopHint)
         self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
         self.setGeometry(self.DEFAULT_GEOMETRY)
         
+        self.menuBar = self.MenuBar(self)
+        self.setMenuBar(self.menuBar)
+                
         self.mainPanel = QtGui.QWidget()
         self.mainPanelLayout = QtGui.QVBoxLayout()
         self.mainPanel.setLayout(self.mainPanelLayout)
@@ -169,29 +183,81 @@ class MainWindow(QtGui.QMainWindow):
         self.controllPanel = self.ControllPanel(self)
         self.mainPanelLayout.addWidget(self.controllPanel)
         
-        self.controllPanel.addButton.clicked.connect(self.stopWatchArea.addStopWatch)
         #self.controllPanel.removeButton.clicked.connect(self.stopWatchArea.removeBottomStopWatch)
         
         self.setWindowTitle(self.TITLE)
         self.setCentralWidget(self.mainPanel)
         
+        self.connect()
+        
         self.stopWatchArea.addStopWatch()
         
         #デバッグ用のキーイベント
         self.keyPressEvent = self.debugKey
+    
+    def save(self, filePath):
+
+        saveFile = open(filePath, 'w')
         
+        state = self.stopWatchArea.getState()
+        print state
+        pickle.dump(state, saveFile)
+        saveFile.close()
+        
+    def saveAs(self):
+        self.save(QtGui.QFileDialog.getOpenFileName(self, caption = "Save File"))
+        
+    def load(self,  directoryName = "", fileName = "stopwatch"):
+        
+        FILE_EXTENSION = ".dat"
+        filePath = directoryName + fileName + FILE_EXTENSION
+        loadFile = open(filePath, 'r')
+        
+        self.disConnet()
+        self.stopWatchArea.removeAllStopWatch()
+        self.mainPanelLayout.removeWidget(self.stopWatchArea)
+        self.mainPanelLayout.removeWidget(self.controllPanel)
+        
+        self.stopWatchArea = None
+        self.controllPanel = None
+        
+        state = pickle.load(loadFile)
+        print state
+        
+        self.stopWatchArea = self.StopWatchArea(self, state)
+        self.mainPanelLayout.addWidget(self.stopWatchArea)
+        self.controllPanel = self.ControllPanel(self)
+        self.mainPanelLayout.addWidget(self.controllPanel)
+        self.connect()
+                
+    def getState(self):
+        pass
+    
+    def connect(self):
+        self.controllPanel.addButton.clicked.connect(self.stopWatchArea.addStopWatch)
+        self.menuBar.fileMenu.saveAsFileAction.triggered.connect(self.saveAs)
+        self.menuBar.editMenu.addStopWatchAction.triggered.connect(self.stopWatchArea.addStopWatch)
+        self.menuBar.editMenu.removeStopWatchAction.triggered.connect(self.stopWatchArea.removeBottomStopWatch)
+        
+    def disConnet(self):
+        self.controllPanel.addButton.clicked.disconnect(self.stopWatchArea.addStopWatch)
+        self.menuBar.fileMenu.saveAsFileAction.triggered.disconnect(self.saveAs)
+        self.menuBar.editMenu.addStopWatchAction.triggered.disconnect(self.stopWatchArea.addStopWatch)
+        self.menuBar.editMenu.removeStopWatchAction.triggered.disconnect(self.stopWatchArea.removeBottomStopWatch)
+        
+    
     def debugKey(self, event):
         key = event.text()
-        
-        if key == 's':
-            print "Stop"
-            self.stopWatchArea.stopCountUpAllStopWatches()
-        
+    
+        if key == 'l':
+            print "Load"
+            self.load()
+    
     class StopWatchArea(QtGui.QScrollArea):
         
         stopWatchPanels = []
         
-        def __init__(self, parent = None):
+        def __init__(self, parent = None, _state = None):
             QtGui.QScrollArea.__init__(self, parent = parent)
             
             self.base = QtGui.QWidget()
@@ -202,12 +268,17 @@ class MainWindow(QtGui.QMainWindow):
             
             self.base.setLayout(self.layout)
             self.setWidget(self.base)
+            
+            if _state:
+                for key in sorted(_state.keys()):
+                    self.addStopWatch(None, _state[key]["labelText"], _state[key]["count"])
         
-        def addStopWatch(self):
-            stopWatchPanel = StopWatchPanel(self)
+        def addStopWatch(self, event = None, _labelText = "",  _count = 0):
+            stopWatchPanel = StopWatchPanel(self, _labelText, _count)
             stopWatchPanel.controllPanel.remove(None, self.removeStopWatch)
             self.stopWatchPanels.append(stopWatchPanel)
             self.layout.addWidget(self.stopWatchPanels[-1])
+            print stopWatchPanel
         
         def stopCountUpAll(self):
             [stopWatchPanel.stopWatch.stopCountUp() for stopWatchPanel in self.stopWatchPanels]
@@ -219,19 +290,33 @@ class MainWindow(QtGui.QMainWindow):
                     stopWatch.stopCountUp()
         
         def removeBottomStopWatch(self):
-            print "hoge"
             if self.stopWatchPanels:
                 stopWatchPanel = self.stopWatchPanels.pop()
                 stopWatchPanel.stopWatch.destructor()
                 self.layout.removeWidget(stopWatchPanel)
         
         def removeStopWatch(self, _stopWatch):
-            if self.stopWatchPanels:
-                for i, stopWatch in enumerate(self.stopWatchPanels):
-                    if stopWatch == _stopWatch:
-                        removeStopWatch = self.stopWatchPanels.pop(i)
-                        removeStopWatch.stopWatch.destructor()
-                        self.layout.removeWidget(removeStopWatch)
+            for i, stopWatch in enumerate(self.stopWatchPanels):
+                if stopWatch == _stopWatch:
+                    removeStopWatch = self.stopWatchPanels.pop(i)
+                    removeStopWatch.stopWatch.destructor()
+                    self.layout.removeWidget(removeStopWatch)
+                    print self.stopWatchPanels
+        
+        def removeAllStopWatch(self):
+            for i in range(len((self.stopWatchPanels))-1, -1, -1):
+                removeStopWatch = self.stopWatchPanels.pop(i)
+                removeStopWatch.stopWatch.destructor()
+                self.layout.removeWidget(removeStopWatch)
+            
+            print self.stopWatchPanels
+        
+        def getState(self):
+            state = {}
+            for i, stopWatchPanel in enumerate(self.stopWatchPanels):
+                state[i] = stopWatchPanel.getState()
+            
+            return state
             
     class ControllPanel(QtGui.QWidget):
         def __init__(self, parent = None):
@@ -249,13 +334,72 @@ class MainWindow(QtGui.QMainWindow):
             """
             
             self.setLayout(self.layout)
+            
+    class MenuBar(QtGui.QMenuBar):
+        
+        def __init__(self, parent = None):
+            QtGui.QMenuBar.__init__(self, parent = parent)
+            
+            self.fileMenu = self.FileMenu(self)
+            self.addMenu(self.fileMenu)
+            
+            self.editMenu = self.EditMenu(self)
+            self.addMenu(self.editMenu)            
 
+        class FileMenu(QtGui.QMenu):
+            TITLE = "File"
+            
+            def __init__(self, parent = None):
+                QtGui.QMenu.__init__(self, self.TITLE, parent = parent)
+
+                self.newFileAction = QtGui.QAction("New", self)
+                self.newFileAction.setShortcut("Alt+Shift+N")
+                self.addAction(self.newFileAction)
+                
+                self.openFileAction = QtGui.QAction("Open File...", self)
+                self.openFileAction.setShortcut("Ctrl+O")
+                self.addAction(self.openFileAction)
+                
+                self.addSeparator()
+    
+                self.saveAsFileAction = QtGui.QAction("Save As...", self)
+                self.saveAsFileAction.setShortcut("Ctrl+Shift+S")
+                self.addAction(self.saveAsFileAction)
+                
+                self.addSeparator()
+                            
+                self.exitAction = QtGui.QAction("Exit", self)
+                self.exitAction.setShortcut("Ctrl+Q")
+                self.exitAction.setStatusTip("Exit application")
+                self.exitAction.triggered.connect(QtGui.qApp.exit)
+                self.addAction(self.exitAction)
+
+        class EditMenu(QtGui.QMenu):
+            TITLE = "Edit"
+            
+            def __init__(self, parent = None):
+                QtGui.QMenu.__init__(self, self.TITLE, parent = parent)
+                
+                self.addStopWatchAction = QtGui.QAction("Add StopWatch", self)
+                self.addStopWatchAction.setShortcut("Ctrl+N")
+                self.addAction(self.addStopWatchAction)
+                
+                self.removeStopWatchAction = QtGui.QAction("Remove StopWatch", self)
+                self.removeStopWatchAction.setShortcut("Ctrl+Shift+D")
+                self.addAction(self.removeStopWatchAction)
+                
+                self.addSeparator()
+                
+                self.settingAction = QtGui.QAction("Setting...", self)
+                #self.settingAction.setShortcut("")
+                self.addAction(self.settingAction)
 
 def main():
     app = QtGui.QApplication(sys.argv)
     
     mainWindow = MainWindow()
     mainWindow.show()
+    
     app.exec_()
 
 if __name__ == "__main__":
