@@ -13,6 +13,6 @@ AUTHOR = "HORITA Noboru"
 INCLUDES = ["sip", "ctypes"]
 
 PY2EXE_OPTIONS = {"includes":INCLUDES}
-setup(console = ["UI.py"],
+setup(console = ["TaskProfiler.py"],
       author = AUTHOR,
       options = {"py2exe":PY2EXE_OPTIONS})
