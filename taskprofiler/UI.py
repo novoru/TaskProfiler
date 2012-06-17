@@ -6,6 +6,7 @@ Created on 2012/06/09
 Description:    Task Profiler User Interface Module using PyQt4
 '''
 
+import csv
 import pickle
 import sys
 from PyQt4 import QtCore, QtGui
@@ -44,8 +45,9 @@ class StopWatchPanel(QtGui.QWidget):
         
     class ControllPanel(QtGui.QWidget):
         
-        DEFAULT_SIZE = QtCore.QSize(270,100)
-        remove_function = None
+        DEFAULT_SIZE    = QtCore.QSize(270,100)
+        removeFunction  = None
+        stopFunction    = None
         
         def __init__(self, parent = None):
             QtGui.QWidget.__init__(self, parent = parent)
@@ -57,6 +59,7 @@ class StopWatchPanel(QtGui.QWidget):
             self.stopButton     = QtGui.QPushButton("STOP")
             self.resetButton    = QtGui.QPushButton("RESET")
             self.removeButton   = QtGui.QPushButton("REMOVE")
+            self.startButton.clicked.connect(self.stopOtherStopWatch)
             self.removeButton.clicked.connect(self.remove)
                    
             layout = QtGui.QHBoxLayout()
@@ -68,13 +71,19 @@ class StopWatchPanel(QtGui.QWidget):
             self.setLayout(layout)      
 
         def remove(self, event, _function = None):
+            if self.removeFunction:
+                self.removeFunction(self.parent())
+                
             if _function:
-                self.remove_function = _function
+                self.removeFunction = _function
+        
+        def stopOtherStopWatch(self, event, _function = None):
+            if self.stopFunction:
+                self.stopFunction(self.parent())
+                
+            if _function:
+                self.stopFunction = _function
             
-            if self.remove_function:
-                self.remove_function(self.parent())
-            
-
     class StopWatchWidget(QtGui.QWidget):
         
         INTERVAL    = 1000      #Unit: [ms]
@@ -166,7 +175,8 @@ class MainWindow(QtGui.QMainWindow):
     DEFAULT_GEOMETRY = QtCore.QRect(10,30,330,530)
     
     def __init__(self, parent = None):
-        QtGui.QMainWindow.__init__(self, parent = parent, flags = QtCore.Qt.WindowStaysOnTopHint)
+        #QtGui.QMainWindow.__init__(self, parent = parent, flags = QtCore.Qt.WindowStaysOnTopHint)
+        QtGui.QMainWindow.__init__(self, parent = parent)
         self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
         self.setGeometry(self.DEFAULT_GEOMETRY)
         
@@ -197,20 +207,24 @@ class MainWindow(QtGui.QMainWindow):
     
     def save(self, filePath):
 
-        saveFile = open(filePath, 'w')
+        try:
+            saveFile = open(filePath, 'w')
+        except:
+            return 
         
         state = self.stopWatchArea.getState()
-        print state
+        
         pickle.dump(state, saveFile)
         saveFile.close()
-        
+    
+    def overwriteSave(self):
+        pass
+    
     def saveAs(self):
-        self.save(QtGui.QFileDialog.getOpenFileName(self, caption = "Save File"))
+        self.save(QtGui.QFileDialog.getSaveFileName(self, caption = "Save File"))
         
-    def load(self,  directoryName = "", fileName = "stopwatch"):
+    def load(self, filePath):
         
-        FILE_EXTENSION = ".dat"
-        filePath = directoryName + fileName + FILE_EXTENSION
         loadFile = open(filePath, 'r')
         
         self.disConnet()
@@ -222,28 +236,118 @@ class MainWindow(QtGui.QMainWindow):
         self.controllPanel = None
         
         state = pickle.load(loadFile)
-        print state
-        
+                
         self.stopWatchArea = self.StopWatchArea(self, state)
         self.mainPanelLayout.addWidget(self.stopWatchArea)
         self.controllPanel = self.ControllPanel(self)
         self.mainPanelLayout.addWidget(self.controllPanel)
         self.connect()
-                
-    def getState(self):
-        pass
     
+    
+    def openFile(self):
+        self.load(QtGui.QFileDialog.getOpenFileName(self, caption = "Open File"))
+    
+    def new(self):
+        
+        msgBox = QtGui.QMessageBox()
+        msgBox.setWindowTitle("Save")
+        msgBox.setText("Do you want to save your changes?")
+        msgBox.setStandardButtons(QtGui.QMessageBox.Save | QtGui.QMessageBox.Discard | QtGui.QMessageBox.Cancel)
+        msgBox.setDefaultButton(QtGui.QMessageBox.Cancel)
+        msgBox.setIcon(QtGui.QMessageBox.Question)
+        
+        msg = msgBox.exec_()
+        
+        if msg == QtGui.QMessageBox.Save:
+            self.saveAs()
+        elif msg == QtGui.QMessageBox.Cancel:
+            return 
+        
+        self.disConnet()
+        self.stopWatchArea.removeAllStopWatch()
+        self.mainPanelLayout.removeWidget(self.stopWatchArea)
+        self.mainPanelLayout.removeWidget(self.controllPanel)
+        
+        self.stopWatchArea = None
+        self.controllPanel = None
+        
+        self.stopWatchArea = self.StopWatchArea(self)
+        self.mainPanelLayout.addWidget(self.stopWatchArea)
+        self.controllPanel = self.ControllPanel(self)
+        self.mainPanelLayout.addWidget(self.controllPanel)
+        self.connect()
+    
+    def switchSynchronizeSetting(self):
+        self.stopWatchArea.settings["synchronizeAllStopWatch"] = self.menuBar.editMenu.synchronizeStopWatchAction.isChecked()
+        #self.menuBar.editMenu.synchronizeStopWatchAction.setChecked(self.menuBar.editMenu.synchronizeStopWatchAction.isChecked())
+    
+    def switchActive(self):
+        BIT_MASK = 0xffffffff
+        if self.menuBar.windowMenu.switchActiveWindowAction.isChecked():
+            self.setWindowFlags(QtCore.Qt.WindowFlags(self.windowFlags().__int__() | (QtCore.Qt.WindowStaysOnTopHint.__int__())))
+        else:
+            self.setWindowFlags(QtCore.Qt.WindowFlags(self.windowFlags().__int__() & (BIT_MASK ^ QtCore.Qt.WindowStaysOnTopHint.__int__())))
+        self.show()
+    
+    def export(self):
+        filePath = QtGui.QFileDialog.getSaveFileName(self, caption = "Export CSV File")
+        
+        if not filePath:
+            return
+                
+        try:
+            exportFile = open(filePath,'w')
+        except:
+            msgBox = QtGui.QMessageBox()
+            msgBox.setWindowTitle("Error")
+            msgBox.setText("Export CSV Failed.")
+            msgBox.setIcon(QtGui.QMessageBox.Warning)
+            msgBox.exec_()
+            return
+        
+        states   = self.stopWatchArea.getState().values()
+        
+        if not states:
+            writer = csv.DictWriter(exportFile, "", extrasaction='ignore')
+            writer.writerows("")
+            exportFile.close()
+            return 
+        
+        rows    = []
+        parameters  = self.stopWatchArea.getState().values()[0].keys()
+        header      = dict((val, val) for val in parameters)
+
+        rows.append(header)
+        [rows.append(state) for state in states]
+        
+        print rows
+        
+        writer = csv.DictWriter(exportFile, parameters, extrasaction='ignore')
+        writer.writerows(rows)
+        
+        exportFile.close()
+
     def connect(self):
         self.controllPanel.addButton.clicked.connect(self.stopWatchArea.addStopWatch)
+        self.menuBar.fileMenu.newFileAction.triggered.connect(self.new)
         self.menuBar.fileMenu.saveAsFileAction.triggered.connect(self.saveAs)
+        self.menuBar.fileMenu.openFileAction.triggered.connect(self.openFile)
+        self.menuBar.fileMenu.exportFileAction.triggered.connect(self.export)
         self.menuBar.editMenu.addStopWatchAction.triggered.connect(self.stopWatchArea.addStopWatch)
         self.menuBar.editMenu.removeStopWatchAction.triggered.connect(self.stopWatchArea.removeBottomStopWatch)
+        self.menuBar.editMenu.synchronizeStopWatchAction.triggered.connect(self.switchSynchronizeSetting)
+        self.menuBar.windowMenu.switchActiveWindowAction.triggered.connect(self.switchActive)
         
     def disConnet(self):
         self.controllPanel.addButton.clicked.disconnect(self.stopWatchArea.addStopWatch)
+        self.menuBar.fileMenu.newFileAction.triggered.disconnect(self.new)
         self.menuBar.fileMenu.saveAsFileAction.triggered.disconnect(self.saveAs)
+        self.menuBar.fileMenu.openFileAction.triggered.disconnect(self.openFile)
+        self.menuBar.fileMenu.exportFileAction.triggered.disconnect(self.export)
         self.menuBar.editMenu.addStopWatchAction.triggered.disconnect(self.stopWatchArea.addStopWatch)
         self.menuBar.editMenu.removeStopWatchAction.triggered.disconnect(self.stopWatchArea.removeBottomStopWatch)
+        self.menuBar.editMenu.synchronizeStopWatchAction.triggered.disconnect(self.switchSynchronizeSetting)
+        self.menuBar.windowMenu.switchActiveWindowAction.triggered.disconnect(self.switchActive)
         
     
     def debugKey(self, event):
@@ -252,10 +356,15 @@ class MainWindow(QtGui.QMainWindow):
         if key == 'l':
             print "Load"
             self.load()
-    
+        if key == 'n':
+            print "New"
+            self.new()
+                
     class StopWatchArea(QtGui.QScrollArea):
         
         stopWatchPanels = []
+        SETTINGS_KEYS    = ["synchronizeAllStopWatch"]
+        settings        = {key:"" for key in SETTINGS_KEYS}
         
         def __init__(self, parent = None, _state = None):
             QtGui.QScrollArea.__init__(self, parent = parent)
@@ -276,19 +385,20 @@ class MainWindow(QtGui.QMainWindow):
         def addStopWatch(self, event = None, _labelText = "",  _count = 0):
             stopWatchPanel = StopWatchPanel(self, _labelText, _count)
             stopWatchPanel.controllPanel.remove(None, self.removeStopWatch)
+            stopWatchPanel.controllPanel.stopOtherStopWatch(None, self.stopCountUpWithout)
             self.stopWatchPanels.append(stopWatchPanel)
             self.layout.addWidget(self.stopWatchPanels[-1])
-            print stopWatchPanel
-        
+                    
         def stopCountUpAll(self):
             [stopWatchPanel.stopWatch.stopCountUp() for stopWatchPanel in self.stopWatchPanels]
         
         def stopCountUpWithout(self, _stopWatch):
-            for stopWatchPanel in self.stopWatchPanels:
-                stopWatch = stopWatchPanel.stopWatch
-                if not(stopWatch == _stopWatch):
-                    stopWatch.stopCountUp()
-        
+            if self.settings["synchronizeAllStopWatch"]:
+                for stopWatchPanel in self.stopWatchPanels:
+                    stopWatch = stopWatchPanel.stopWatch
+                    if not(stopWatch == _stopWatch):
+                        stopWatch.stopCountUp()
+            
         def removeBottomStopWatch(self):
             if self.stopWatchPanels:
                 stopWatchPanel = self.stopWatchPanels.pop()
@@ -301,15 +411,12 @@ class MainWindow(QtGui.QMainWindow):
                     removeStopWatch = self.stopWatchPanels.pop(i)
                     removeStopWatch.stopWatch.destructor()
                     self.layout.removeWidget(removeStopWatch)
-                    print self.stopWatchPanels
-        
+                            
         def removeAllStopWatch(self):
             for i in range(len((self.stopWatchPanels))-1, -1, -1):
                 removeStopWatch = self.stopWatchPanels.pop(i)
                 removeStopWatch.stopWatch.destructor()
                 self.layout.removeWidget(removeStopWatch)
-            
-            print self.stopWatchPanels
         
         def getState(self):
             state = {}
@@ -346,6 +453,9 @@ class MainWindow(QtGui.QMainWindow):
             self.editMenu = self.EditMenu(self)
             self.addMenu(self.editMenu)            
 
+            self.windowMenu = self.WindowMenu(self)
+            self.addMenu(self.windowMenu)   
+            
         class FileMenu(QtGui.QMenu):
             TITLE = "File"
             
@@ -367,6 +477,12 @@ class MainWindow(QtGui.QMainWindow):
                 self.addAction(self.saveAsFileAction)
                 
                 self.addSeparator()
+    
+                self.exportFileAction = QtGui.QAction("Export...", self)
+                self.exportFileAction.setShortcut("Ctrl+E")
+                self.addAction(self.exportFileAction)
+                
+                self.addSeparator()
                             
                 self.exitAction = QtGui.QAction("Exit", self)
                 self.exitAction.setShortcut("Ctrl+Q")
@@ -384,15 +500,27 @@ class MainWindow(QtGui.QMainWindow):
                 self.addStopWatchAction.setShortcut("Ctrl+N")
                 self.addAction(self.addStopWatchAction)
                 
-                self.removeStopWatchAction = QtGui.QAction("Remove StopWatch", self)
+                self.removeStopWatchAction = QtGui.QAction("Remove Bottom StopWatch", self)
                 self.removeStopWatchAction.setShortcut("Ctrl+Shift+D")
                 self.addAction(self.removeStopWatchAction)
                 
                 self.addSeparator()
                 
-                self.settingAction = QtGui.QAction("Setting...", self)
+                self.synchronizeStopWatchAction = QtGui.QAction("Synchronize All StopWatch", self)
                 #self.settingAction.setShortcut("")
-                self.addAction(self.settingAction)
+                self.synchronizeStopWatchAction.setCheckable(True)
+                self.addAction(self.synchronizeStopWatchAction)
+
+        class WindowMenu(QtGui.QMenu):
+            TITLE = "Window"
+            
+            def __init__(self, parent = None):
+                QtGui.QMenu.__init__(self, self.TITLE, parent = parent)
+                
+                self.switchActiveWindowAction = QtGui.QAction("Always TopLevel Window", self)
+                self.switchActiveWindowAction.setCheckable(True)
+                self.addAction(self.switchActiveWindowAction)
+
 
 def main():
     app = QtGui.QApplication(sys.argv)
